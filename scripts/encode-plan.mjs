@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import zlib from "node:zlib";
 
-const [file, baseUrl = "https://fubudget.com/"] = process.argv.slice(2);
+const [file, baseUrl = "https://shivbijlani.github.io/fubudget/"] = process.argv.slice(2);
 if (!file) {
   console.error("Usage: node scripts/encode-plan.mjs path/to/plan.json [baseUrl]");
   process.exit(1);
