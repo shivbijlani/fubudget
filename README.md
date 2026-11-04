@@ -34,9 +34,13 @@ It may be encoded three ways; the app accepts all of them:
 
 | Field | Shape |
 | --- | --- |
-| `title`, `subtitle`, `updated`, `baseNote`, `headline`, `numbersNote`, `sankeyNote`, `investmentsNote` | strings |
-| `incomes` | `[{ label, amount }]`, $/mo, the left column of the Sankey |
-| `buckets` | `[{ id, label?, targetMin?, targetMax?, color?, amount?, note? }]`, merged by `id` over the four standard buckets (`fixed`, `investments`, `savings`, `guilt`). `amount` defaults to the sum of the bucket's envelopes; `note` defaults to a generated comparison with the target band. |
+| `title`, `subtitle`, `updated`, `baseNote`, `headline`, `numbersNote`, `sankeyNote`, `investmentsNote`, `incomeNote` | strings |
+| `incomes` | `[{ label, amount, group?, color?, note? }]`, $/mo. Each one is its own node in the left column of the Sankey; sources in the same `group` share a color. |
+| `sankeyCenterLabel`, `sankeyCenterTotal` | Label and value of the center Sankey node. The value defaults to the larger of total income and total outflow. |
+| `sankeyFlows` | `[{ name, amount, color?, note? }]`, right column of the Sankey. When empty, the buckets are used. |
+| `sankeyUnallocated` | $/mo not planned anywhere, shown as its own right-side node |
+| `incomeDetail` | `[{ label, rows: [{ source, ytd?, projected?, basis? }] }]`, optional income breakdown tables |
+| `buckets` | `[{ id, label?, targetMin?, targetMax?, color?, amount?, note? }]` (`targetMin`/`targetMax` may be `null` for a bucket with no IWT target), merged by `id` over the four standard buckets (`fixed`, `investments`, `savings`, `guilt`). `amount` defaults to the sum of the bucket's envelopes; `note` defaults to a generated comparison with the target band. |
 | `envelopes` | `[{ bucket, name, amount }]`, $/mo |
 | `investments` | `[{ component, perYear?, perMonth?, note?, total? }]`, the detailed investments table |
 | `appendix` | `[{ source, location?, usedFor?, version? }]` |

@@ -1,13 +1,38 @@
 export type Income = {
   label: string;
   amount: number;
+  /** Groups sources by earner or kind, such as "Cash" or "Rental". Sources in a group share a color. */
+  group?: string;
+  color?: string;
+  note?: string;
+};
+
+/** A right-side Sankey node. When a plan has none, the buckets are used. */
+export type Flow = {
+  name: string;
+  amount: number;
+  color?: string;
+  note?: string;
+};
+
+export type IncomeDetailRow = {
+  source: string;
+  ytd?: number;
+  projected?: number;
+  basis?: string;
+};
+
+export type IncomeDetailGroup = {
+  label: string;
+  rows: IncomeDetailRow[];
 };
 
 export type Bucket = {
   id: string;
   label: string;
-  targetMin: number;
-  targetMax: number;
+  /** null means the bucket has no IWT target, such as cash not yet assigned. */
+  targetMin: number | null;
+  targetMax: number | null;
   color: string;
   /** Explicit $/mo. When omitted, the sum of this bucket's envelopes is used. */
   amount?: number;
@@ -45,7 +70,17 @@ export type PlanParams = {
   numbersNote: string;
   sankeyNote: string;
   investmentsNote: string;
+  incomeNote: string;
   incomes: Income[];
+  incomeDetail: IncomeDetailGroup[];
+  /** Label for the center Sankey node. */
+  sankeyCenterLabel: string;
+  /** Center node value. Defaults to the larger of total income and total outflow. */
+  sankeyCenterTotal?: number;
+  /** Right-side Sankey nodes. Empty means use the buckets. */
+  sankeyFlows: Flow[];
+  /** Money in that is not planned anywhere yet, shown as its own right-side node. */
+  sankeyUnallocated?: number;
   buckets: Bucket[];
   envelopes: Envelope[];
   investments: InvestmentRow[];
@@ -78,7 +113,11 @@ export function blankPlan(): PlanParams {
     numbersNote: "",
     sankeyNote: "",
     investmentsNote: "",
+    incomeNote: "",
     incomes: [],
+    incomeDetail: [],
+    sankeyCenterLabel: "All income",
+    sankeyFlows: [],
     buckets: STANDARD_BUCKETS.map((bucket) => ({ ...bucket })),
     envelopes: [],
     investments: [],
@@ -94,14 +133,20 @@ export function demoPlan(): PlanParams {
     title: "Demo Conscious Spending Plan",
     subtitle: "Fictional example household. Every name and number on this page is made up.",
     baseNote:
-      "Take-home spending $5,950/mo plus paycheck investments $1,350/mo gives a $7,300/mo base. Monthly figures are annual averages.",
+      "Two take-home paychecks plus a side gig bring in $5,950/mo of cash, and paycheck investments add $1,350/mo, for a $7,300/mo base. Monthly figures are annual averages.",
     headline:
       "This demo household sits close to the IWT bands: fixed costs are in range, investments are above the 10% starting point, and guilt-free spending has room to grow.",
     numbersNote: "Investments here include a small employer match. Swap in your own plan with the Edit data panel.",
     investmentsNote: "Demo numbers only.",
+    incomeNote: "Every income source flows into one total, which then splits into the four IWT buckets.",
+    sankeyCenterLabel: "All income after tax",
     incomes: [
-      { label: "Take-home spending", amount: 5950 },
-      { label: "Paycheck investments", amount: 1350 },
+      { label: "Partner A take-home pay", amount: 3400, group: "Partner A", note: "Salary after tax and payroll deductions" },
+      { label: "Partner B take-home pay", amount: 2250, group: "Partner B", note: "Salary after tax and payroll deductions" },
+      { label: "Weekend tutoring", amount: 300, group: "Side income", note: "Averaged over the year" },
+      { label: "Partner A 401(k)", amount: 900, group: "Partner A", note: "Paycheck deduction" },
+      { label: "Partner A employer match", amount: 250, group: "Partner A", note: "Employer money" },
+      { label: "Partner B Roth IRA", amount: 200, group: "Partner B", note: "Monthly auto transfer" },
     ],
     envelopes: [
       { bucket: "fixed", name: "Rent", amount: 2300 },
@@ -163,12 +208,13 @@ function sanitizeBuckets(input: unknown, base: Bucket[]): Bucket[] {
     const id = str(item.id).trim();
     if (!id) continue;
     const existing = result.find((bucket) => bucket.id === id);
-    const target: Bucket = existing ?? { id, label: id, targetMin: 0, targetMax: 0, color: "#64748b" };
+    const target: Bucket = existing ?? { id, label: id, targetMin: null, targetMax: null, color: "#64748b" };
     if (typeof item.label === "string" && item.label.trim()) target.label = item.label;
-    const min = num(item.targetMin);
-    const max = num(item.targetMax);
-    if (min !== undefined) target.targetMin = min;
-    if (max !== undefined) target.targetMax = max;
+    for (const key of ["targetMin", "targetMax"] as const) {
+      if (item[key] === null) target[key] = null;
+      const value = num(item[key]);
+      if (value !== undefined) target[key] = value;
+    }
     if (typeof item.color === "string" && HEX_COLOR.test(item.color)) target.color = item.color;
     const amount = num(item.amount);
     if (amount !== undefined) target.amount = amount;
@@ -183,15 +229,63 @@ export function sanitizePlan(input: unknown, base: PlanParams = blankPlan()): Pl
   if (!input || typeof input !== "object") return base;
   const rec = input as Record<string, unknown>;
   const plan: PlanParams = { ...base };
-  for (const key of ["title", "subtitle", "updated", "baseNote", "headline", "numbersNote", "sankeyNote", "investmentsNote"] as const) {
+  for (const key of [
+    "title",
+    "subtitle",
+    "updated",
+    "baseNote",
+    "headline",
+    "numbersNote",
+    "sankeyNote",
+    "investmentsNote",
+    "incomeNote",
+    "sankeyCenterLabel",
+  ] as const) {
     if (rec[key] !== undefined) plan[key] = str(rec[key], base[key]);
   }
+  plan.sankeyCenterTotal = num(rec.sankeyCenterTotal) ?? base.sankeyCenterTotal;
+  plan.sankeyUnallocated = num(rec.sankeyUnallocated) ?? base.sankeyUnallocated;
   plan.buckets = sanitizeBuckets(rec.buckets, base.buckets);
+  const color = (value: unknown) => (typeof value === "string" && HEX_COLOR.test(value) ? value : undefined);
+  const optional = (value: unknown) => (typeof value === "string" && value.trim() ? value : undefined);
   const incomes = arr(rec.incomes);
   if (incomes) {
     plan.incomes = incomes
-      .map((item) => ({ label: str(item.label).trim(), amount: num(item.amount) ?? 0 }))
+      .map((item) => ({
+        label: str(item.label).trim(),
+        amount: num(item.amount) ?? 0,
+        group: optional(item.group),
+        color: color(item.color),
+        note: optional(item.note),
+      }))
       .filter((item) => item.label);
+  }
+  const flows = arr(rec.sankeyFlows);
+  if (flows) {
+    plan.sankeyFlows = flows
+      .map((item) => ({
+        name: str(item.name).trim(),
+        amount: num(item.amount) ?? 0,
+        color: color(item.color),
+        note: optional(item.note),
+      }))
+      .filter((item) => item.name);
+  }
+  const incomeDetail = arr(rec.incomeDetail);
+  if (incomeDetail) {
+    plan.incomeDetail = incomeDetail
+      .map((group) => ({
+        label: str(group.label).trim(),
+        rows: (arr(group.rows) ?? [])
+          .map((row) => ({
+            source: str(row.source).trim(),
+            ytd: num(row.ytd),
+            projected: num(row.projected),
+            basis: optional(row.basis),
+          }))
+          .filter((row) => row.source),
+      }))
+      .filter((group) => group.label && group.rows.length);
   }
   const envelopes = arr(rec.envelopes);
   if (envelopes) {
@@ -260,12 +354,12 @@ export function formatMoney(n: number): string {
 }
 
 export function targetLabel(bucket: Pick<Bucket, "targetMin" | "targetMax">): string {
-  return bucket.targetMin === bucket.targetMax
-    ? `${bucket.targetMin}%`
-    : `${bucket.targetMin} to ${bucket.targetMax}%`;
+  if (bucket.targetMin === null || bucket.targetMax === null) return "None";
+  return bucket.targetMin === bucket.targetMax ? `${bucket.targetMin}%` : `${bucket.targetMin} to ${bucket.targetMax}%`;
 }
 
 function statusFor(share: number, bucket: Bucket): string {
+  if (bucket.targetMin === null || bucket.targetMax === null) return "";
   const pct = share * 100;
   if (pct < bucket.targetMin) return `${(bucket.targetMin - pct).toFixed(1)} points below the band`;
   if (pct > bucket.targetMax) return `${(pct - bucket.targetMax).toFixed(1)} points above the band`;

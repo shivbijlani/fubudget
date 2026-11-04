@@ -1,21 +1,36 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatMoney, formatShare, type BucketSummary, type Income } from "@/lib/plan";
+import { formatMoney, formatShare, type Flow, type Income } from "@/lib/plan";
 
 type SankeyProps = {
   incomes: Income[];
-  buckets: BucketSummary[];
-  total: number;
+  flows: Flow[];
+  centerLabel: string;
+  centerTotal?: number;
+  unallocated?: number;
+  /** Base used for the percentages on right-side nodes. */
+  base: number;
 };
 
 const MARGIN = 10;
-const MIN_NODE_PX = 18;
-const GAP_PX = 4;
-const COLUMN_X = [0.001, 0.3, 0.56, 0.999];
-const WRAP_CHARS = 22;
+const MIN_NODE_PX = 22;
+const LINE_PX = 16;
+const GAP_PX = 6;
+const COLUMN_X = [0.001, 0.42, 0.999];
+const WRAP_CHARS = 26;
+const GROUP_PALETTE = ["#1f4e79", "#2a7f62", "#d97706", "#7c3aed", "#be185d", "#0f766e", "#475569"];
+const UNALLOCATED_COLOR = "#888888";
 
-/** Breaks long labels onto several lines so left and middle columns stay clear of their neighbors. */
+function withAlpha(hex: string, alpha: number): string {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const n = parseInt(h.slice(0, 6), 16);
+  if (Number.isNaN(n)) return `rgba(100,116,139,${alpha})`;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+/** Breaks long labels onto several lines so each column stays clear of its neighbors. */
 function wrap(text: string): string {
   const lines: string[] = [];
   let line = "";
@@ -31,30 +46,28 @@ function wrap(text: string): string {
   return lines.join("<br>");
 }
 
-function withAlpha(hex: string, alpha: number): string {
-  let h = hex.replace("#", "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  const n = parseInt(h.slice(0, 6), 16);
-  if (Number.isNaN(n)) return `rgba(100,116,139,${alpha})`;
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+export function incomeColors(incomes: Income[]): string[] {
+  const groups = Array.from(new Set(incomes.map((income) => income.group ?? "")));
+  return incomes.map((income) => income.color ?? GROUP_PALETTE[groups.indexOf(income.group ?? "") % GROUP_PALETTE.length]);
 }
 
 /**
- * Builds the Sankey with every node pinned: income sources, total, buckets, envelopes.
- * Envelopes stay grouped under their bucket, and tiny envelopes get enough room for a label.
+ * Three pinned columns: each income source, one center total, then where the money goes.
+ * Tiny nodes get enough room for a readable label.
  */
-function buildSankey({ incomes, buckets, total }: SankeyProps) {
+function buildSankey({ incomes, flows, centerLabel, centerTotal, unallocated, base }: SankeyProps) {
   const labels: string[] = [];
   const colors: string[] = [];
   const source: number[] = [];
   const target: number[] = [];
   const value: number[] = [];
   const linkColors: string[] = [];
-  const columns: { index: number; value: number }[][] = [[], [], [], []];
+  const columns: { index: number; value: number; minPx: number }[][] = [[], [], []];
   const addNode = (label: string, color: string, column: number, nodeValue: number) => {
     labels.push(label);
     colors.push(color);
-    columns[column].push({ index: labels.length - 1, value: nodeValue });
+    const lines = label.split("<br>").length;
+    columns[column].push({ index: labels.length - 1, value: nodeValue, minPx: Math.max(MIN_NODE_PX, lines * LINE_PX + 6) });
     return labels.length - 1;
   };
   const link = (from: number, to: number, amount: number, color: string) => {
@@ -64,41 +77,38 @@ function buildSankey({ incomes, buckets, total }: SankeyProps) {
     linkColors.push(color);
   };
 
-  const positiveIncomes = incomes.filter((income) => income.amount > 0);
-  const positiveBuckets = buckets.filter((bucket) => bucket.value > 0);
-  const incomeSum = positiveIncomes.reduce((sum, income) => sum + income.amount, 0);
-  const totalIndex = addNode(`Total base<br>${formatMoney(total)}/mo`, "#1f2937", 1, Math.max(total, incomeSum));
-  for (const income of positiveIncomes) {
-    const i = addNode(`${wrap(income.label)}<br>${formatMoney(income.amount)}/mo`, "#1f4e79", 0, income.amount);
-    link(i, totalIndex, income.amount, "rgba(31,78,121,0.25)");
+  const sourceColors = incomeColors(incomes);
+  const left = incomes.map((income, i) => ({ income, color: sourceColors[i] })).filter(({ income }) => income.amount > 0);
+  const right: Flow[] = flows.filter((flow) => flow.amount > 0);
+  if (unallocated && unallocated > 0) right.push({ name: "Not yet allocated", amount: unallocated, color: UNALLOCATED_COLOR });
+  const inSum = left.reduce((sum, { income }) => sum + income.amount, 0);
+  const outSum = right.reduce((sum, flow) => sum + flow.amount, 0);
+  const center = centerTotal ?? Math.max(inSum, outSum);
+
+  const centerIndex = addNode(`${wrap(centerLabel || "All income")}<br>${formatMoney(center)}/mo`, "#333333", 1, Math.max(center, inSum, outSum));
+  for (const { income, color } of left) {
+    const i = addNode(`${wrap(income.label)}<br>${formatMoney(income.amount)}/mo`, color, 0, income.amount);
+    link(i, centerIndex, income.amount, withAlpha(color, 0.35));
   }
-  for (const bucket of positiveBuckets) {
-    const envelopes = bucket.envelopes.filter((envelope) => envelope.amount > 0);
-    const envelopeSum = envelopes.reduce((sum, envelope) => sum + envelope.amount, 0);
-    const b = addNode(
-      `${wrap(bucket.label)}<br>${formatMoney(bucket.value)}/mo<br>${formatShare(bucket.share)} of base`,
-      bucket.color,
-      2,
-      Math.max(bucket.value, envelopeSum),
-    );
-    link(totalIndex, b, bucket.value, withAlpha(bucket.color, 0.3));
-    for (const envelope of envelopes) {
-      const e = addNode(`${envelope.name}, ${formatMoney(envelope.amount)}`, withAlpha(bucket.color, 0.6), 3, envelope.amount);
-      link(b, e, envelope.amount, withAlpha(bucket.color, 0.2));
-    }
+  for (const flow of right) {
+    const color = flow.color ?? "#64748b";
+    const share = base > 0 ? `, ${formatShare(flow.amount / base)}` : "";
+    const r = addNode(`${wrap(flow.name)}<br>${formatMoney(flow.amount)}/mo${share}`, color, 2, flow.amount);
+    link(centerIndex, r, flow.amount, withAlpha(color, 0.3));
   }
 
   const used = columns.filter((column) => column.length > 0);
   const maxSum = Math.max(1, ...used.map((column) => column.reduce((sum, node) => sum + node.value, 0)));
   const maxCount = Math.max(1, ...used.map((column) => column.length));
-  const inner = Math.max(520, Math.round(maxCount * (MIN_NODE_PX + GAP_PX) * 1.6));
+  const maxMin = Math.max(...used.map((column) => column.reduce((sum, node) => sum + node.minPx + GAP_PX, 0)));
+  const inner = Math.max(480, Math.round(maxMin * 1.5));
   const fits = (k: number) =>
     used.every(
       (column) =>
-        column.reduce((sum, node) => sum + Math.max(node.value * k, MIN_NODE_PX), 0) + GAP_PX * (column.length - 1) <=
+        column.reduce((sum, node) => sum + Math.max(node.value * k, node.minPx), 0) + GAP_PX * (column.length - 1) <=
         inner,
     );
-  // Largest px-per-dollar scale where every column fits with labels readable.
+  // Largest px-per-dollar scale where every column fits with readable labels.
   let lo = 0;
   let hi = inner / maxSum;
   for (let i = 0; i < 40; i++) {
@@ -114,7 +124,7 @@ function buildSankey({ incomes, buckets, total }: SankeyProps) {
   const y: number[] = new Array(labels.length).fill(0.5);
   columns.forEach((column, c) => {
     if (!column.length) return;
-    const heights = column.map((node) => Math.max(node.value * k, MIN_NODE_PX));
+    const heights = column.map((node) => Math.max(node.value * k, node.minPx));
     const needed = heights.reduce((sum, h) => sum + h, 0) + GAP_PX * (column.length - 1);
     let cursor = (inner - needed) / 2;
     column.forEach((node, i) => {
@@ -124,18 +134,21 @@ function buildSankey({ incomes, buckets, total }: SankeyProps) {
     });
   });
 
-  return { labels, colors, source, target, value, linkColors, x, y, pad, height: inner + MARGIN * 2 };
+  return { labels, colors, source, target, value, linkColors, x, y, pad, height: inner + MARGIN * 4, empty: !left.length && !right.length };
 }
 
-export function Sankey({ incomes, buckets, total }: SankeyProps) {
+export function Sankey({ incomes, flows, centerLabel, centerTotal, unallocated, base }: SankeyProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
-  const sankey = useMemo(() => buildSankey({ incomes, buckets, total }), [incomes, buckets, total]);
+  const sankey = useMemo(
+    () => buildSankey({ incomes, flows, centerLabel, centerTotal, unallocated, base }),
+    [incomes, flows, centerLabel, centerTotal, unallocated, base],
+  );
 
   useEffect(() => {
     let cancelled = false;
     const el = ref.current;
-    if (!el) return;
+    if (!el || sankey.empty) return;
     import("plotly.js-dist-min")
       .then(({ default: Plotly }) => {
         if (cancelled) return;
@@ -165,7 +178,7 @@ export function Sankey({ incomes, buckets, total }: SankeyProps) {
             },
           ],
           {
-            margin: { l: MARGIN, r: MARGIN, t: MARGIN, b: MARGIN },
+            margin: { l: MARGIN, r: MARGIN, t: MARGIN * 2, b: MARGIN * 2 },
             font: { size: 13, color: "#111" },
             height: sankey.height,
             paper_bgcolor: "rgba(0,0,0,0)",
@@ -182,6 +195,9 @@ export function Sankey({ incomes, buckets, total }: SankeyProps) {
     };
   }, [sankey]);
 
+  if (sankey.empty) {
+    return <p className="text-sm text-muted-foreground">Add income sources or buckets to draw the money flow.</p>;
+  }
   if (failed) {
     return (
       <p className="text-sm text-muted-foreground">

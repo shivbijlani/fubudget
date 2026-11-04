@@ -5,13 +5,21 @@ import { useSearchParams } from "next/navigation";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Sankey } from "@/components/Sankey";
-import { demoPlan, formatMoney, formatShare, planFromPayload, summarize, type PlanParams } from "@/lib/plan";
+import { Sankey, incomeColors } from "@/components/Sankey";
+import {
+  demoPlan,
+  formatMoney,
+  formatShare,
+  planFromPayload,
+  summarize,
+  type Flow,
+  type PlanParams,
+} from "@/lib/plan";
 import { buildShareUrl, decodePlan, rawPlanFromQuery } from "@/lib/share";
 
 type Source = "demo" | "url" | "edited";
 
-const SECTIONS = ["numbers", "sankey", "investments", "envelopes", "explainer", "sources", "appendix", "data"] as const;
+const SECTIONS = ["numbers", "sankey", "income", "investments", "envelopes", "explainer", "sources", "appendix", "data"] as const;
 const DEFAULT_OPEN = SECTIONS.filter((section) => section !== "data");
 
 function Table({ head, children }: { head: React.ReactNode; children: React.ReactNode }) {
@@ -122,6 +130,10 @@ export default function App() {
 
   const { total, buckets, incomeTotal, orphanEnvelopes } = summary;
   const envelopeCount = plan.envelopes.length;
+  const sourceColors = incomeColors(plan.incomes);
+  const flows: Flow[] = plan.sankeyFlows.length
+    ? plan.sankeyFlows
+    : buckets.map((bucket) => ({ name: bucket.label, amount: bucket.value, color: bucket.color }));
 
   return (
     <div className="mx-auto max-w-5xl px-5 pb-16 pt-8">
@@ -162,14 +174,19 @@ export default function App() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Dashboard summary">
+      <div
+        className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${buckets.length > 4 ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}
+        aria-label="Dashboard summary"
+      >
         <Card className="border-t-[6px] border-t-slate-800">
           <CardContent className="p-4">
             <div className="text-xs uppercase tracking-wide text-muted-foreground">Total base</div>
             <div className="text-2xl font-bold">{formatMoney(total)}/mo</div>
             {plan.incomes.length > 0 && (
               <div className="text-xs text-muted-foreground">
-                {plan.incomes.map((income) => `${income.label} ${formatMoney(income.amount)}`).join(" + ")}
+                {plan.incomes.length <= 3
+                  ? plan.incomes.map((income) => `${income.label} ${formatMoney(income.amount)}`).join(" + ")
+                  : `${plan.incomes.length} income sources, ${formatMoney(incomeTotal)}/mo in`}
               </div>
             )}
           </CardContent>
@@ -181,7 +198,8 @@ export default function App() {
               <div className="text-2xl font-bold">{formatMoney(bucket.value)}/mo</div>
               <div className="text-lg font-semibold">{formatShare(bucket.share)}</div>
               <div className="text-xs text-muted-foreground">
-                IWT target {bucket.targetLabel} · {bucket.status}
+                {bucket.targetMin === null ? "No IWT target" : `IWT target ${bucket.targetLabel}`}
+                {bucket.status ? ` · ${bucket.status}` : ""}
               </div>
             </CardContent>
           </Card>
@@ -196,7 +214,10 @@ export default function App() {
 
       {incomeTotal > 0 && Math.abs(incomeTotal - total) > 1 && (
         <div className="my-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm">
-          Income sources add up to {formatMoney(incomeTotal)}/mo but the buckets add up to {formatMoney(total)}/mo.
+          Income sources add up to {formatMoney(incomeTotal)}/mo and the buckets add up to {formatMoney(total)}/mo,{" "}
+          {incomeTotal > total
+            ? `so ${formatMoney(incomeTotal - total)}/mo comes in that the plan does not spend.`
+            : `so the plan spends ${formatMoney(total - incomeTotal)}/mo more than comes in.`}
         </div>
       )}
       {orphanEnvelopes.length > 0 && (
@@ -242,12 +263,85 @@ export default function App() {
 
         <Panel value="sankey" title="Sankey: money flow">
           <p>
-            Read left to right: <strong>income sources, total base, IWT buckets, envelopes</strong>. Hover any flow for
-            its exact $/mo value.
+            Read left to right: <strong>each income source, the total, then where the money goes</strong>. Hover any
+            flow for its exact $/mo value.
           </p>
           {plan.sankeyNote && <p className="text-xs text-muted-foreground">{plan.sankeyNote}</p>}
-          {open.includes("sankey") && <Sankey incomes={plan.incomes} buckets={buckets} total={total} />}
+          {open.includes("sankey") && (
+            <Sankey
+              incomes={plan.incomes}
+              flows={flows}
+              centerLabel={plan.sankeyCenterLabel}
+              centerTotal={plan.sankeyCenterTotal}
+              unallocated={plan.sankeyUnallocated}
+              base={total}
+            />
+          )}
         </Panel>
+
+        {(plan.incomes.length > 0 || plan.incomeDetail.length > 0) && (
+          <Panel value="income" title="Income: money coming in">
+            {plan.incomeNote && <p>{plan.incomeNote}</p>}
+            {plan.incomes.length > 0 && (
+              <Table
+                head={
+                  <tr>
+                    <th className={th}>Source</th>
+                    <th className={th}>Group</th>
+                    <th className={`${th} ${num}`}>$/mo</th>
+                    <th className={th}>Note</th>
+                  </tr>
+                }
+              >
+                {plan.incomes.map((income, i) => (
+                  <tr key={`${income.label}-${i}`}>
+                    <td className={td}>
+                      <span
+                        className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                        style={{ backgroundColor: sourceColors[i] }}
+                        aria-hidden
+                      />
+                      {income.label}
+                    </td>
+                    <td className={td}>{income.group}</td>
+                    <td className={`${td} ${num}`}>{formatMoney(income.amount)}</td>
+                    <td className={td}>{income.note}</td>
+                  </tr>
+                ))}
+                <tr className="font-bold">
+                  <td className={`${td} border-t-2 border-t-slate-700`}>Total</td>
+                  <td className={`${td} border-t-2 border-t-slate-700`} />
+                  <td className={`${td} ${num} border-t-2 border-t-slate-700`}>{formatMoney(incomeTotal)}</td>
+                  <td className={`${td} border-t-2 border-t-slate-700`} />
+                </tr>
+              </Table>
+            )}
+            {plan.incomeDetail.map((group) => (
+              <div key={group.label} className="mb-4">
+                <h3 className="mt-2 text-base font-semibold">{group.label}</h3>
+                <Table
+                  head={
+                    <tr>
+                      <th className={th}>Item</th>
+                      <th className={`${th} ${num}`}>Year to date</th>
+                      <th className={`${th} ${num}`}>Full year</th>
+                      <th className={th}>Basis</th>
+                    </tr>
+                  }
+                >
+                  {group.rows.map((row, i) => (
+                    <tr key={`${row.source}-${i}`}>
+                      <td className={td}>{row.source}</td>
+                      <td className={`${td} ${num}`}>{row.ytd !== undefined ? formatMoney(row.ytd) : ""}</td>
+                      <td className={`${td} ${num}`}>{row.projected !== undefined ? formatMoney(row.projected) : ""}</td>
+                      <td className={td}>{row.basis}</td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            ))}
+          </Panel>
+        )}
 
         {plan.investments.length > 0 && (
           <Panel value="investments" title="Investments: detailed breakdown">
