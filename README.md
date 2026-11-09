@@ -1,6 +1,6 @@
 # fubudget
 
-A Conscious Spending Plan dashboard (in the style of Ramit Sethi's *I Will Teach You To Be Rich*), published at [shivbijlani.github.io/fubudget](https://shivbijlani.github.io/fubudget/).
+A Conscious Spending Plan dashboard (in the style of Ramit Sethi's *I Will Teach You To Be Rich*), published at [fubudget.com](https://fubudget.com/).
 
 It shows every monthly dollar sorted into the four IWT buckets (fixed costs, investments, savings, guilt-free spending), compares each bucket to its target band, and draws a Sankey of income sources, total base, buckets, and envelopes.
 
@@ -9,7 +9,7 @@ It shows every monthly dollar sorted into the four IWT buckets (fixed costs, inv
 The repo ships only the app and a clearly fictional demo household. A real plan arrives in the URL:
 
 ```
-https://shivbijlani.github.io/fubudget/?plan=<encoded payload>
+https://fubudget.com/?plan=<encoded payload>
 ```
 
 Nothing is stored on a server or in the browser. To keep a plan, keep its link. The page sets `Referrer-Policy: no-referrer` so the link is not leaked to other sites. Query strings do reach the static host's request logs, so treat a plan link like any other private link.
@@ -49,7 +49,7 @@ It may be encoded three ways; the app accepts all of them:
 Make a link from a JSON file:
 
 ```bash
-npm run encode -- path/to/plan.json            # https://shivbijlani.github.io/fubudget/?plan=z1....
+npm run encode -- path/to/plan.json            # https://fubudget.com/?plan=z1....
 npm run encode -- path/to/plan.json http://localhost:3000/
 ```
 
@@ -66,12 +66,13 @@ npm run lint
 
 ## Deploy
 
-Same mechanics as lifetime: pushing to `main` runs `.github/workflows/deploy-pages.yml`, which builds the static export with `NEXT_PUBLIC_BASE_PATH=/fubudget` and publishes `out/` to the `gh-pages` branch. GitHub Pages serves that branch over HTTPS at `https://shivbijlani.github.io/fubudget/`.
+Same mechanics as lifetime: pushing to `main` runs `.github/workflows/deploy-pages.yml`, which builds the static export at the root path and publishes `out/` to the `gh-pages` branch. `public/CNAME` points GitHub Pages at `fubudget.com`, served over HTTPS. Old `shivbijlani.github.io/fubudget/` links redirect to `fubudget.com` with their query string.
 
-### Moving to the fubudget.com custom domain
+DNS for `fubudget.com` (at the registrar): apex `A` records to `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`, and `www` pointing at GitHub Pages (a `CNAME` to `shivbijlani.github.io` is preferred).
 
-1. Add `public/CNAME` containing `fubudget.com`.
-2. In the workflow's build step, remove `NEXT_PUBLIC_BASE_PATH` (or set `CUSTOM_DOMAIN=1`) so the site builds at the root path.
-3. DNS for `fubudget.com`: apex `A` records to `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` (optionally `AAAA` to `2606:50c0:8000::153` through `2606:50c0:8003::153`), plus `www` as a `CNAME` to `shivbijlani.github.io`.
-4. Repo Settings, Pages: set the custom domain, then enforce HTTPS once the certificate is issued.
-5. Update the default `baseUrl` in `scripts/encode-plan.mjs`.
+### Serving from shivbijlani.github.io/fubudget instead
+
+1. Delete `public/CNAME`.
+2. In the workflow's build step, add `env: NEXT_PUBLIC_BASE_PATH: /fubudget`.
+3. Remove the custom domain in repo Settings, Pages.
+4. Update the default `baseUrl` in `scripts/encode-plan.mjs`.

@@ -27,8 +27,6 @@ jobs:
 
       - name: Build static export
         run: npm run export
-        env:
-          NEXT_PUBLIC_BASE_PATH: /fubudget
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
