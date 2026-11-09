@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Sankey, incomeColors } from "@/components/Sankey";
 import {
   demoPlan,
@@ -172,38 +171,6 @@ export default function App() {
         <Button variant="outline" onClick={() => setOpen([])}>
           Collapse all
         </Button>
-      </div>
-
-      <div
-        className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${buckets.length > 4 ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}
-        aria-label="Dashboard summary"
-      >
-        <Card className="border-t-[6px] border-t-slate-800">
-          <CardContent className="p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Total base</div>
-            <div className="text-2xl font-bold">{formatMoney(total)}/mo</div>
-            {plan.incomes.length > 0 && (
-              <div className="text-xs text-muted-foreground">
-                {plan.incomes.length <= 3
-                  ? plan.incomes.map((income) => `${income.label} ${formatMoney(income.amount)}`).join(" + ")
-                  : `${plan.incomes.length} income sources, ${formatMoney(incomeTotal)}/mo in`}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        {buckets.map((bucket) => (
-          <Card key={bucket.id} className="border-t-[6px]" style={{ borderTopColor: bucket.color }}>
-            <CardContent className="p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">{bucket.label}</div>
-              <div className="text-2xl font-bold">{formatMoney(bucket.value)}/mo</div>
-              <div className="text-lg font-semibold">{formatShare(bucket.share)}</div>
-              <div className="text-xs text-muted-foreground">
-                {bucket.targetMin === null ? "No IWT target" : `IWT target ${bucket.targetLabel}`}
-                {bucket.status ? ` · ${bucket.status}` : ""}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
       </div>
 
       {plan.headline && (
@@ -405,18 +372,8 @@ export default function App() {
           ))}
         </Panel>
 
-        <Panel value="explainer" title="What is IWT?">
-          <div className="space-y-3 leading-relaxed">
-            <p>
-              <strong>IWT</strong> stands for <em>I Will Teach You To Be Rich</em>, by Ramit Sethi. The core idea: spend
-              extravagantly on the things you love, and cut mercilessly on the things you don&rsquo;t, on purpose rather
-              than by accident.
-            </p>
-            <p>
-              The <strong>Conscious Spending Plan</strong> divides all monthly money into four buckets and compares each
-              bucket&rsquo;s share to a target range. A bucket far outside its range tells you where to look; it does not
-              automatically tell you to change it.
-            </p>
+        <Panel value="explainer" title="The four buckets">
+          <div className="leading-relaxed">
             <ul className="list-disc space-y-1 pl-6">
               <li>
                 <strong>Fixed costs (50 to 60%):</strong> must-pay, roughly the same each month: housing, utilities,
@@ -477,7 +434,7 @@ export default function App() {
 
         <Panel value="data" title="Edit data">
           <p className="text-sm text-muted-foreground">
-            This JSON is the single source of truth for the page. Edit it and apply to re-render the cards, tables, and
+            This JSON is the single source of truth for the page. Edit it and apply to re-render the tables and
             Sankey, then copy a share link. Your data lives only in the link; fubudget stores nothing.
           </p>
           <textarea
