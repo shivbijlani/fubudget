@@ -206,7 +206,7 @@ function SankeyPlot({ sankey, minWidth }: { sankey: SankeyData; minWidth: number
       </p>
     );
   }
-  return <div ref={ref} className="w-full" style={{ minWidth, minHeight: sankey.height }} />;
+  return <div ref={ref} className="sankey-chart w-full" style={{ minWidth, minHeight: sankey.height }} />;
 }
 
 type Orientable = ScreenOrientation & {

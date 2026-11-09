@@ -55,7 +55,7 @@ body {
   box-shadow: 0 10px 30px -12px rgba(15, 23, 42, 0.4);
 }
 
-#sankey .node-label {
+.sankey-chart .node-label {
   text-shadow: none !important;
   fill: #111 !important;
   font-weight: 600 !important;
