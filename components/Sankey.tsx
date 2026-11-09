@@ -14,6 +14,7 @@ type SankeyProps = {
 };
 
 const MARGIN = 10;
+const MIN_WIDTH_PX = 720;
 const MIN_NODE_PX = 22;
 const LINE_PX = 16;
 const GAP_PX = 6;
@@ -205,5 +206,17 @@ export function Sankey({ incomes, flows, centerLabel, centerTotal, unallocated, 
       </p>
     );
   }
-  return <div id="sankey" ref={ref} className="w-full" style={{ minHeight: sankey.height }} />;
+  // On a narrow phone screen the chart would squeeze into a tall, skinny
+  // strip, so keep its intended width and let the user scroll sideways
+  // (or turn the phone to landscape) instead.
+  return (
+    <div>
+      <p className="mb-1 text-xs text-muted-foreground sm:hidden">
+        Scroll sideways, or turn your phone to landscape, to see the full flow.
+      </p>
+      <div className="overflow-x-auto">
+        <div id="sankey" ref={ref} className="w-full" style={{ minWidth: MIN_WIDTH_PX, minHeight: sankey.height }} />
+      </div>
+    </div>
+  );
 }
