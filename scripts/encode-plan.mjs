@@ -13,7 +13,10 @@ if (!file) {
 
 const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
 const payload = typeof parsed.version === "number" ? parsed : { version: 1, params: parsed };
-const compressed = zlib.deflateRawSync(Buffer.from(JSON.stringify(payload), "utf8"), { level: 9 });
+// Level 6, not 9: Chrome's DecompressionStream rejects the level-9 stream,
+// so links built at level 9 fall back to demo data in a real browser.
+// Level 6 matches what the app's own encoder (CompressionStream) produces.
+const compressed = zlib.deflateRawSync(Buffer.from(JSON.stringify(payload), "utf8"), { level: 6 });
 const encoded = "z1." + compressed.toString("base64url");
 
 const url = new URL(baseUrl);
